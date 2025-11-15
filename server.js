@@ -1,4 +1,3 @@
-// sheshield-backend.js
 const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
@@ -9,25 +8,18 @@ const twilio = require('twilio');
 const nodemailer = require('nodemailer');
 const geoip = require('geoip-lite');
 const WebSocket = require('ws');
-
 const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'sheshield_secret_key_2023';
-
-// Middleware
 app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
-
-// MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/sheshield', {
     useNewUrlParser: true,
     useUnifiedTopology: true,
 })
 .then(() => console.log('MongoDB connected successfully'))
 .catch(err => console.error('MongoDB connection error:', err));
-
-// Database Models
 const UserSchema = new mongoose.Schema({
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
@@ -111,8 +103,6 @@ const User = mongoose.model('User', UserSchema);
 const EmergencyAlert = mongoose.model('EmergencyAlert', EmergencyAlertSchema);
 const SafetyZone = mongoose.model('SafetyZone', SafetyZoneSchema);
 const CommunityGroup = mongoose.model('CommunityGroup', CommunityGroupSchema);
-
-// Utility Functions
 const generateToken = (userId) => {
     return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '30d' });
 };
@@ -189,8 +179,6 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     return R * c;
 };
-
-// WebSocket Server for Real-time Features
 const wss = new WebSocket.Server({ port: 8080 });
 const connectedClients = new Map();
 
@@ -234,10 +222,6 @@ const broadcastToUserContacts = async (userId, data) => {
         console.error('Error broadcasting to contacts:', error);
     }
 };
-
-// API Routes
-
-// Auth Routes
 app.post('/api/register', async (req, res) => {
     try {
         const { name, email, password, phone, dateOfBirth } = req.body;
@@ -320,8 +304,6 @@ app.post('/api/login', async (req, res) => {
         res.status(500).json({ error: 'Login failed', details: error.message });
     }
 });
-
-// User Routes
 app.get('/api/profile', authenticateToken, async (req, res) => {
     try {
         const user = await User.findById(req.userId).select('-password');
@@ -374,8 +356,6 @@ app.put('/api/settings', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Failed to update settings', details: error.message });
     }
 });
-
-// Emergency Contacts Routes
 app.get('/api/contacts', authenticateToken, async (req, res) => {
     try {
         const user = await User.findById(req.userId);
@@ -482,7 +462,6 @@ app.delete('/api/contacts/:contactId', authenticateToken, async (req, res) => {
     }
 });
 
-// Emergency Alert Routes
 app.post('/api/emergency/alert', authenticateToken, async (req, res) => {
     try {
         const { type, location, recordingUrl } = req.body;
@@ -524,13 +503,11 @@ app.post('/api/emergency/alert', authenticateToken, async (req, res) => {
                 `);
             }
         }
-        
-        // Notify emergency services if location is available
+       
         if (location?.latitude && location?.longitude) {
             console.log(`Emergency services notified for location: ${location.latitude}, ${location.longitude}`);
         }
-        
-        // Update user's location
+       
         if (location?.latitude && location?.longitude) {
             user.location = {
                 latitude: location.latitude,
@@ -539,8 +516,7 @@ app.post('/api/emergency/alert', authenticateToken, async (req, res) => {
             };
             await user.save();
         }
-        
-        // Broadcast to connected clients
+     
         const ws = connectedClients.get(req.userId);
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({
@@ -572,8 +548,7 @@ app.post('/api/emergency/cancel/:alertId', authenticateToken, async (req, res) =
         alert.status = 'cancelled';
         alert.resolvedAt = new Date();
         await alert.save();
-        
-        // Notify contacts that alert is cancelled
+       
         const user = await User.findById(req.userId);
         const message = `ALERT CANCELLED: Emergency alert from ${user.name} has been cancelled.`;
         
@@ -604,7 +579,6 @@ app.get('/api/emergency/history', authenticateToken, async (req, res) => {
     }
 });
 
-// Location Routes
 app.post('/api/location/update', authenticateToken, async (req, res) => {
     try {
         const { latitude, longitude } = req.body;
@@ -626,7 +600,6 @@ app.post('/api/location/update', authenticateToken, async (req, res) => {
         
         await user.save();
         
-        // Check for nearby danger zones
         const dangerZones = await SafetyZone.find({
             location: {
                 $near: {
@@ -688,7 +661,6 @@ app.get('/api/location/nearby-safety', authenticateToken, async (req, res) => {
     }
 });
 
-// Community Routes
 app.get('/api/community/groups', authenticateToken, async (req, res) => {
     try {
         const groups = await CommunityGroup.find({ 
@@ -753,7 +725,6 @@ app.post('/api/community/groups/:groupId/join', authenticateToken, async (req, r
     }
 });
 
-// Safety Zones Routes
 app.get('/api/safety-zones', async (req, res) => {
     try {
         const { latitude, longitude, radius = 5000 } = req.query;
@@ -805,7 +776,6 @@ app.post('/api/safety-zones/report', authenticateToken, async (req, res) => {
     }
 });
 
-// Check-in Routes
 app.post('/api/check-in', authenticateToken, async (req, res) => {
     try {
         const { latitude, longitude, message } = req.body;
@@ -840,7 +810,6 @@ app.post('/api/check-in', authenticateToken, async (req, res) => {
     }
 });
 
-// Voice Command Processing
 app.post('/api/voice/process', authenticateToken, async (req, res) => {
     try {
         const { audioData, transcript } = req.body;
@@ -888,10 +857,9 @@ app.post('/api/voice/process', authenticateToken, async (req, res) => {
     }
 });
 
-// Admin Routes
 app.get('/api/admin/stats', authenticateToken, async (req, res) => {
     try {
-        // In a real app, you would check if user is admin
+    
         const totalUsers = await User.countDocuments();
         const totalAlerts = await EmergencyAlert.countDocuments();
         const activeAlerts = await EmergencyAlert.countDocuments({ status: 'active' });
@@ -910,7 +878,6 @@ app.get('/api/admin/stats', authenticateToken, async (req, res) => {
     }
 });
 
-// Health Check
 app.get('/api/health', (req, res) => {
     res.json({ 
         status: 'OK', 
@@ -920,18 +887,15 @@ app.get('/api/health', (req, res) => {
     });
 });
 
-// Error Handling Middleware
 app.use((error, req, res, next) => {
     console.error('Unhandled error:', error);
     res.status(500).json({ error: 'Internal server error' });
 });
 
-// 404 Handler
 app.use('*', (req, res) => {
     res.status(404).json({ error: 'Endpoint not found' });
 });
 
-// Start Server
 app.listen(PORT, () => {
     console.log(`SheShield Backend Server running on port ${PORT}`);
     console.log(`Health check: http://localhost:${PORT}/api/health`);
