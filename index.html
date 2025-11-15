@@ -4068,7 +4068,630 @@
                 });
             }
         });
+const API_BASE_URL = 'http://localhost:5000/api';
+const WS_BASE_URL = 'ws://localhost:8080';
+class SheShieldAPI {
+    constructor() {
+        this.token = localStorage.getItem('sheshield_token');
+        this.ws = null;
+    }
+    async request(endpoint, options = {}) {
+        const url = `${API_BASE_URL}${endpoint}`;
+        const config = {
+            headers: {
+                'Content-Type': 'application/json',
+                ...(this.token && { 'Authorization': `Bearer ${this.token}` }),
+                ...options.headers
+            },
+            ...options
+        };
+
+        try {
+            const response = await fetch(url, config);
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || `HTTP error! status: ${response.status}`);
+            }
+
+            return data;
+        } catch (error) {
+            console.error(`API Error (${endpoint}):`, error);
+            throw error;
+        }
+    }
+
+    async register(userData) {
+        return this.request('/register', {
+            method: 'POST',
+            body: JSON.stringify(userData)
+        });
+    }
+
+    async login(credentials) {
+        const data = await this.request('/login', {
+            method: 'POST',
+            body: JSON.stringify(credentials)
+        });
+
+        if (data.token) {
+            this.token = data.token;
+            localStorage.setItem('sheshield_token', data.token);
+            localStorage.setItem('sheshield_user', JSON.stringify(data.user));
+        }
+
+        return data;
+    }
+
+    logout() {
+        this.token = null;
+        localStorage.removeItem('sheshield_token');
+        localStorage.removeItem('sheshield_user');
+        if (this.ws) {
+            this.ws.close();
+            this.ws = null;
+        }
+    }
+
+    async getProfile() {
+        return this.request('/profile');
+    }
+
+    async updateProfile(profileData) {
+        return this.request('/profile', {
+            method: 'PUT',
+            body: JSON.stringify(profileData)
+        });
+    }
+
+    async updateSettings(settings) {
+        return this.request('/settings', {
+            method: 'PUT',
+            body: JSON.stringify({ safetySettings: settings })
+        });
+    }
+
+    async getContacts() {
+        return this.request('/contacts');
+    }
+
+    async addContact(contactData) {
+        return this.request('/contacts', {
+            method: 'POST',
+            body: JSON.stringify(contactData)
+        });
+    }
+
+    async updateContact(contactId, contactData) {
+        return this.request(`/contacts/${contactId}`, {
+            method: 'PUT',
+            body: JSON.stringify(contactData)
+        });
+    }
+
+    async deleteContact(contactId) {
+        return this.request(`/contacts/${contactId}`, {
+            method: 'DELETE'
+        });
+    }
+
+    
+    async triggerEmergencyAlert(alertData) {
+        return this.request('/emergency/alert', {
+            method: 'POST',
+            body: JSON.stringify(alertData)
+        });
+    }
+
+    async cancelEmergencyAlert(alertId) {
+        return this.request(`/emergency/cancel/${alertId}`, {
+            method: 'POST'
+        });
+    }
+
+    async getEmergencyHistory(page = 1, limit = 20) {
+        return this.request(`/emergency/history?page=${page}&limit=${limit}`);
+    }
+
+    async updateLocation(locationData) {
+        return this.request('/location/update', {
+            method: 'POST',
+            body: JSON.stringify(locationData)
+        });
+    }
+
+    async getNearbySafety(location) {
+        return this.request(`/location/nearby-safety?latitude=${location.latitude}&longitude=${location.longitude}`);
+    }
+
+    async getCommunityGroups(search = '', page = 1, limit = 20) {
+        let url = `/community/groups?page=${page}&limit=${limit}`;
+        if (search) {
+            url += `&search=${encodeURIComponent(search)}`;
+        }
+        return this.request(url);
+    }
+
+    async createCommunityGroup(groupData) {
+        return this.request('/community/groups', {
+            method: 'POST',
+            body: JSON.stringify(groupData)
+        });
+    }
+
+    async joinCommunityGroup(groupId) {
+        return this.request(`/community/groups/${groupId}/join`, {
+            method: 'POST'
+        });
+    }
+
+    async getSafetyZones(location = null, radius = 5000) {
+        let url = '/safety-zones';
+        if (location) {
+            url += `?latitude=${location.latitude}&longitude=${location.longitude}&radius=${radius}`;
+        }
+        return this.request(url);
+    }
+
+    async reportSafetyZone(zoneData) {
+        return this.request('/safety-zones/report', {
+            method: 'POST',
+            body: JSON.stringify(zoneData)
+        });
+    }
+
+    async safeCheckIn(checkInData) {
+        return this.request('/check-in', {
+            method: 'POST',
+            body: JSON.stringify(checkInData)
+        });
+    }
+
+    async processVoiceCommand(voiceData) {
+        return this.request('/voice/process', {
+            method: 'POST',
+            body: JSON.stringify(voiceData)
+        });
+    }
+
+   
+    connectWebSocket(userId) {
+        if (!this.token) {
+            console.error('No authentication token available for WebSocket connection');
+            return;
+        }
+
+        try {
+            this.ws = new WebSocket(`${WS_BASE_URL}?userId=${userId}&token=${this.token}`);
+
+            this.ws.onopen = () => {
+                console.log('WebSocket connected successfully');
+                this.onWebSocketOpen();
+            };
+
+            this.ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    this.handleWebSocketMessage(data);
+                } catch (error) {
+                    console.error('Error parsing WebSocket message:', error);
+                }
+            };
+
+            this.ws.onclose = (event) => {
+                console.log('WebSocket disconnected:', event.code, event.reason);
+                this.onWebSocketClose(event);
+            };
+
+            this.ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                this.onWebSocketError(error);
+            };
+
+        } catch (error) {
+            console.error('WebSocket connection failed:', error);
+        }
+    }
+
+    onWebSocketOpen() {}
+    onWebSocketClose(event) {}
+    onWebSocketError(error) {}
+    handleWebSocketMessage(data) {}
+
+    sendWebSocketMessage(message) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify(message));
+        } else {
+            console.error('WebSocket is not connected');
+        }
+    }
+}
+
+const sheShieldAPI = new SheShieldAPI();
+document.addEventListener('DOMContentLoaded', function() {
+    const token = localStorage.getItem('sheshield_token');
+    const userData = localStorage.getItem('sheshield_user');
+    
+    if (token && userData) {
+        sheShieldAPI.token = token;
+        const user = JSON.parse(userData);
+        showUserProfile(user);
+        
+        sheShieldAPI.connectWebSocket(user.id);
+        
+        sheShieldAPI.handleWebSocketMessage = function(data) {
+            switch (data.type) {
+                case 'EMERGENCY_ALERT_TRIGGERED':
+                    showEmergencyAlert(data);
+                    break;
+                case 'DANGER_ZONE_ALERT':
+                    showDangerZoneAlert(data);
+                    break;
+                case 'CONTACT_EMERGENCY_ALERT':
+                    showContactEmergencyAlert(data);
+                    break;
+                case 'USER_TYPING':
+                    showTypingIndicator(data);
+                    break;
+                case 'CONNECTION_ESTABLISHED':
+                    console.log('Real-time features activated');
+                    break;
+                default:
+                    console.log('Unknown WebSocket message:', data);
+            }
+        };
+    }
+
+    const loginForm = document.getElementById('loginForm');
+    if (loginForm) {
+        loginForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            
+            try {
+                const result = await sheShieldAPI.login({ email, password });
+                
+                if (result.success) {
+                    showUserProfile(result.user);
+                    document.getElementById('loginModal').classList.remove('active');
+                    showAlert('Login successful!', 'success');
+                   
+                    sheShieldAPI.connectWebSocket(result.user.id);
+                }
+            } catch (error) {
+                showAlert(error.message, 'error');
+            }
+        });
+    }
+
+    const registerForm = document.getElementById('registerForm');
+    if (registerForm) {
+        registerForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = {
+                name: document.getElementById('registerName').value,
+                email: document.getElementById('registerEmail').value,
+                password: document.getElementById('registerPassword').value,
+                phone: document.getElementById('registerPhone').value,
+                dateOfBirth: document.getElementById('registerDob')?.value
+            };
+            
+            try {
+                const result = await sheShieldAPI.register(formData);
+                
+                if (result.success) {
+                    showUserProfile(result.user);
+                    document.getElementById('registerModal').classList.remove('active');
+                    showAlert('Registration successful! Welcome to SheShield.', 'success');
+                   
+                    sheShieldAPI.connectWebSocket(result.user.id);
+                }
+            } catch (error) {
+                showAlert(error.message, 'error');
+            }
+        });
+    }
+
+    const sosButton = document.getElementById('sosButton');
+    if (sosButton) {
+        sosButton.addEventListener('click', async function() {
+            if (!confirm('Are you sure you want to trigger an emergency alert? This will notify your emergency contacts.')) {
+                return;
+            }
+
+            try {
+               
+                const location = await getCurrentLocation();
+                
+                const alertData = {
+                    type: 'manual',
+                    location: location
+                };
+
+                const result = await sheShieldAPI.triggerEmergencyAlert(alertData);
+                
+                if (result.success) {
+                    document.getElementById('sosModal').classList.add('active');
+                    showAlert(`Emergency alert sent! ${result.contactsNotified} contacts notified.`, 'success');
+                    
+                    simulateEmergencyRecording();
+                }
+            } catch (error) {
+                showAlert(`Failed to send emergency alert: ${error.message}`, 'error');
+            }
+        });
+    }
+
+    const getLocationBtn = document.getElementById('getLocationBtn');
+    if (getLocationBtn) {
+        getLocationBtn.addEventListener('click', async function() {
+            try {
+                const location = await getCurrentLocation();
+                const result = await sheShieldAPI.updateLocation(location);
+                
+                if (result.success) {
+                    showAlert('Location updated successfully!', 'success');
+                    
+                    if (result.dangerZones) {
+                        showAlert('Warning: You are near danger zones!', 'warning');
+                    }
+                }
+            } catch (error) {
+                showAlert(`Failed to update location: ${error.message}`, 'error');
+            }
+        });
+    }
+
+    const checkInBtn = document.getElementById('checkInBtn');
+    if (checkInBtn) {
+        checkInBtn.addEventListener('click', async function() {
+            try {
+                const location = await getCurrentLocation();
+                const message = prompt('Add a message for your check-in (optional):');
+                
+                const result = await sheShieldAPI.safeCheckIn({
+                    latitude: location.latitude,
+                    longitude: location.longitude,
+                    message: message
+                });
+                
+                if (result.success) {
+                    showAlert('Safe check-in completed! Your contacts have been notified.', 'success');
+                }
+            } catch (error) {
+                showAlert(`Failed to check in: ${error.message}`, 'error');
+            }
+        });
+    }
+
+    const voiceBtn = document.getElementById('voiceBtn');
+    if (voiceBtn) {
+        voiceBtn.addEventListener('click', function() {
+            if (!sheShieldAPI.token) {
+                showAlert('Please login to use voice commands', 'warning');
+                return;
+            }
+
+            startVoiceRecognition();
+        });
+    }
+
+    document.querySelectorAll('.nav-link').forEach(link => {
+        link.addEventListener('click', function() {
+            const targetPage = this.getAttribute('data-page');
+            
+            if (targetPage === 'profile' && sheShieldAPI.token) {
+                loadUserProfile();
+            }
+            
+            if (targetPage === 'contacts' && sheShieldAPI.token) {
+                loadEmergencyContacts();
+            }
+            
+            if (targetPage === 'history' && sheShieldAPI.token) {
+                loadEmergencyHistory();
+            }
+            
+            if (targetPage === 'dashboard' && sheShieldAPI.token) {
+                initializeDashboard();
+            }
+        });
+    });
+});
+
+function showAlert(message, type = 'info') {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type}`;
+    alertDiv.innerHTML = `
+        <i class="fas fa-${getAlertIcon(type)}"></i>
+        <div>${message}</div>
+    `;
+    
+    document.body.appendChild(alertDiv);
+    
+    setTimeout(() => {
+        alertDiv.remove();
+    }, 5000);
+}
+
+function getAlertIcon(type) {
+    const icons = {
+        success: 'check-circle',
+        error: 'exclamation-triangle',
+        warning: 'exclamation-circle',
+        info: 'info-circle'
+    };
+    return icons[type] || 'info-circle';
+}
+
+async function getCurrentLocation() {
+    return new Promise((resolve, reject) => {
+        if (!navigator.geolocation) {
+            reject(new Error('Geolocation is not supported by this browser.'));
+            return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                resolve({
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                    accuracy: position.coords.accuracy
+                });
+            },
+            (error) => {
+                reject(new Error(`Unable to retrieve location: ${error.message}`));
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 60000
+            }
+        );
+    });
+}
+
+function showUserProfile(user) {
+    document.getElementById('authButtons').style.display = 'none';
+    document.getElementById('userProfile').style.display = 'flex';
+    document.getElementById('userName').textContent = user.name;
+    document.getElementById('userAvatar').textContent = getInitials(user.name);
+}
+
+function showContactEmergencyAlert(data) {
+    showAlert(`Emergency alert from ${data.userName}! Check the app for details.`, 'error');
+}
+
+function showDangerZoneAlert(data) {
+    showAlert(`⚠️ ${data.message}`, 'warning');
+}
+
+function simulateEmergencyRecording() {
+    const recordingIndicator = document.querySelector('.recording-indicator');
+    if (recordingIndicator) {
+        recordingIndicator.style.display = 'flex';
+    
+        setTimeout(() => {
+            recordingIndicator.style.display = 'none';
+        }, 120000);
+    }
+}
+
+function startVoiceRecognition() {
+    const voiceBtn = document.getElementById('voiceBtn');
+    const voiceStatus = document.getElementById('voiceStatus');
+    
+    voiceBtn.classList.add('listening');
+    voiceStatus.textContent = 'Listening... Say "Help Me" or "I am safe"';
+
+    setTimeout(() => {
+        const commands = ['help me', 'i am safe', 'emergency'];
+        const randomCommand = commands[Math.floor(Math.random() * commands.length)];
+        
+        processVoiceCommand(randomCommand);
+        
+        voiceBtn.classList.remove('listening');
+        voiceStatus.textContent = `Command detected: "${randomCommand}"`;
+    }, 3000);
+}
+
+async function processVoiceCommand(transcript) {
+    try {
+        const result = await sheShieldAPI.processVoiceCommand({
+            transcript: transcript,
+            audioData: null
+        });
+        
+        if (result.success) {
+            switch (result.action) {
+                case 'sos_triggered':
+                    document.getElementById('sosModal').classList.add('active');
+                    showAlert('Emergency alert triggered by voice command!', 'success');
+                    break;
+                case 'checkin_triggered':
+                    const location = await getCurrentLocation();
+                    await sheShieldAPI.safeCheckIn({
+                        latitude: location.latitude,
+                        longitude: location.longitude,
+                        message: 'Automatic check-in via voice command'
+                    });
+                    showAlert('Safe check-in completed via voice command!', 'success');
+                    break;
+                default:
+                    showAlert(`Voice command processed: ${transcript}`, 'info');
+            }
+        }
+    } catch (error) {
+        showAlert(`Voice command failed: ${error.message}`, 'error');
+    }
+}
+
+async function loadUserProfile() {
+    try {
+        const result = await sheShieldAPI.getProfile();
+        if (result.success) {
+            const user = result.user;
+            document.getElementById('profileName').textContent = user.name;
+            document.getElementById('profileEmail').textContent = user.email;
+            document.getElementById('profileFullName').textContent = user.name;
+            document.getElementById('profilePhone').textContent = user.phone;
+            document.getElementById('profileDob').textContent = user.dateOfBirth ? 
+                new Date(user.dateOfBirth).toLocaleDateString() : 'Not set';
+            document.getElementById('profileSafetyScore').textContent = '92%'; // This would come from backend
+        }
+    } catch (error) {
+        showAlert(`Failed to load profile: ${error.message}`, 'error');
+    }
+}
+
+async function loadEmergencyContacts() {
+    try {
+        const result = await sheShieldAPI.getContacts();
+        if (result.success) {
+            console.log('Contacts loaded:', result.contacts);
+           
+        }
+    } catch (error) {
+        showAlert(`Failed to load contacts: ${error.message}`, 'error');
+    }
+}
+
+async function loadEmergencyHistory() {
+    try {
+        const result = await sheShieldAPI.getEmergencyHistory();
+        if (result.success) {
+            console.log('Emergency history loaded:', result.alerts);
+        }
+    } catch (error) {
+        showAlert(`Failed to load emergency history: ${error.message}`, 'error');
+    }
+}
+
+async function initializeDashboard() {
+    try {
+        const location = await getCurrentLocation();
+        await sheShieldAPI.updateLocation(location);
+        
+        const safetyResult = await sheShieldAPI.getNearbySafety(location);
+        if (safetyResult.success) {
+            if (safetyResult.dangerZones) {
+                document.getElementById('safetyScore').textContent = '75% Secure';
+                document.getElementById('recentAlerts').textContent = 'Near danger zones';
+            }
+        }
+    } catch (error) {
+        console.error('Dashboard initialization error:', error);
+    }
+}
+
+function getInitials(name) {
+    return name.split(' ').map(n => n[0]).join('').toUpperCase();
+}
     </script>
+
 </body>
 
 </html>
