@@ -80,3 +80,9 @@ Your support motivates further development!
 
 This project is open-source and available under the MIT License.
 
+👩‍💻 Developed By
+
+Pothuraju.Sai Sriharini
+B.Tech | Full Stack & AI/ML Enthusiast
+🔗 GitHub Profile: https://github.com/HariniPothuraju
+
